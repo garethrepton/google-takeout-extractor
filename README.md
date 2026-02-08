@@ -1,6 +1,6 @@
 > [!WARNING]
 > **This project was vibe coded!** Built entirely through AI-assisted development with [Claude Code](https://claude.ai/claude-code).
-> The code works but may contain unconventional patterns. Use at your own risk and always backup your data first.
+> Your mileage may vary. Use at your own risk and always backup your data first.
 
 # Google Takeout Tool
 
