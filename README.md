@@ -310,7 +310,7 @@ Hashing files ━━━━━━━━━━━━━━━━━━━━ 100% 
 
 ### 5. Diff
 
-Compare two directories to find files in source that are missing from destination.
+Compare two directories OR zip archives against a directory. Auto-detects if source contains zip files.
 
 ```bash
 python src/main.py diff <source_dir> <dest_dir> [options]
@@ -325,7 +325,10 @@ python src/main.py diff <source_dir> <dest_dir> [options]
 
 **Example:**
 ```bash
-# Compare two photo libraries
+# Compare zips against extracted folder (auto-detects zips)
+python src/main.py diff "D:\Takeout" "D:\Photos" --show-missing
+
+# Compare two regular directories
 python src/main.py diff "D:\OldPhotos" "D:\NewPhotos" --show-missing
 
 # Save missing files list for later

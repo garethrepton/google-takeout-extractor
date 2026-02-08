@@ -1279,7 +1279,7 @@ def cmd_compare(args):
 
 
 def cmd_diff(args):
-    """Execute the diff command (compare two directories)."""
+    """Execute the diff command (compare two directories or zips vs directory)."""
     source_dir = Path(args.source_dir)
     dest_dir = Path(args.dest_dir)
 
@@ -1293,49 +1293,106 @@ def cmd_diff(args):
 
     display_banner()
 
+    # Check if source contains zip files
+    zip_files = list(source_dir.glob("*.zip"))
+    is_zip_source = len(zip_files) > 0
+
     cache = TakeoutCache()
     try:
-        # Step 1: Scan source directory
-        console.print("[bold]Step 1:[/bold] Scanning source directory")
-        source_scanner = DirectoryScanner(hash_strategy=args.hash_strategy)
-        source_files = source_scanner.scan_directory(source_dir)
-        console.print(f"[cyan]Found {len(source_files):,} files in source[/cyan]")
-        console.print()
+        if is_zip_source:
+            # Source is zip files - scan them for unique files
+            console.print(f"[bold]Step 1:[/bold] Scanning {len(zip_files)} zip files")
 
-        # Build source index by content key
-        source_by_key: Dict[str, List[DirectoryFileInfo]] = defaultdict(list)
-        source_total_size = 0
-        for f in source_files:
-            source_by_key[f.get_content_key()].append(f)
-            source_total_size += f.file_size
+            # Scan all zips
+            all_files, zip_contents = scan_directory(source_dir)
+            console.print(f"[cyan]Found {len(all_files):,} total files in zips[/cyan]")
 
-        # Step 2: Scan destination directory
-        console.print("[bold]Step 2:[/bold] Scanning destination directory")
-        dest_scanner = DirectoryScanner(hash_strategy=args.hash_strategy)
-        dest_files = dest_scanner.scan_directory(dest_dir)
-        console.print(f"[cyan]Found {len(dest_files):,} files in destination[/cyan]")
-        console.print()
+            # Build hash map to find unique files
+            unique_files, duplicates = build_hash_map(all_files)
+            console.print(f"[cyan]Unique files: {len(unique_files):,} (duplicates: {len(duplicates):,})[/cyan]")
+            console.print()
 
-        # Build destination index
-        dest_keys = set()
-        for f in dest_files:
-            dest_keys.add(f.get_content_key())
+            # Build source index by content key (size + crc from zip)
+            source_by_key: Dict[str, List] = defaultdict(list)
+            source_total_size = 0
+            source_file_count = 0
 
-        # Step 3: Compare
-        console.print("[bold]Step 3:[/bold] Comparing directories")
+            for file_info in unique_files:
+                # Use size_crc as content key for zip files
+                content_key = f"{file_info.file_size}_{file_info.file_crc}"
+                source_by_key[content_key].append(file_info)
+                source_total_size += file_info.file_size
+                source_file_count += 1
 
-        # Find files in source but not in destination
-        missing_files = []
-        present_files = []
+            # Step 2: Scan destination directory
+            console.print("[bold]Step 2:[/bold] Scanning destination directory")
+            dest_scanner = DirectoryScanner(hash_strategy="size_crc")  # Match zip CRC strategy
+            dest_files = dest_scanner.scan_directory(dest_dir)
+            console.print(f"[cyan]Found {len(dest_files):,} files in destination[/cyan]")
+            console.print()
 
-        for content_key, files in source_by_key.items():
-            if content_key in dest_keys:
-                present_files.extend(files)
-            else:
-                missing_files.extend(files)
+            # Build destination index
+            dest_keys = set()
+            for f in dest_files:
+                dest_keys.add(f.get_content_key())
 
-        missing_size = sum(f.file_size for f in missing_files)
-        present_size = sum(f.file_size for f in present_files)
+            # Step 3: Compare
+            console.print("[bold]Step 3:[/bold] Comparing zips against destination")
+
+            # Find files in zips but not in destination
+            missing_files = []
+            present_files = []
+
+            for content_key, files in source_by_key.items():
+                if content_key in dest_keys:
+                    present_files.extend(files)
+                else:
+                    missing_files.extend(files)
+
+            missing_size = sum(f.file_size for f in missing_files)
+            source_files = list(unique_files)  # For display
+
+        else:
+            # Source is regular directory
+            console.print("[bold]Step 1:[/bold] Scanning source directory")
+            source_scanner = DirectoryScanner(hash_strategy=args.hash_strategy)
+            source_files = source_scanner.scan_directory(source_dir)
+            console.print(f"[cyan]Found {len(source_files):,} files in source[/cyan]")
+            console.print()
+
+            # Build source index by content key
+            source_by_key: Dict[str, List[DirectoryFileInfo]] = defaultdict(list)
+            source_total_size = 0
+            for f in source_files:
+                source_by_key[f.get_content_key()].append(f)
+                source_total_size += f.file_size
+
+            # Step 2: Scan destination directory
+            console.print("[bold]Step 2:[/bold] Scanning destination directory")
+            dest_scanner = DirectoryScanner(hash_strategy=args.hash_strategy)
+            dest_files = dest_scanner.scan_directory(dest_dir)
+            console.print(f"[cyan]Found {len(dest_files):,} files in destination[/cyan]")
+            console.print()
+
+            # Build destination index
+            dest_keys = set()
+            for f in dest_files:
+                dest_keys.add(f.get_content_key())
+
+            # Step 3: Compare
+            console.print("[bold]Step 3:[/bold] Comparing directories")
+
+            # Find files in source but not in destination
+            missing_files = []
+            present_files = []
+
+            for content_key, files in source_by_key.items():
+                if content_key in dest_keys:
+                    present_files.extend(files)
+                else:
+                    missing_files.extend(files)
+
+            missing_size = sum(f.file_size for f in missing_files)
 
         console.print()
 
@@ -1356,15 +1413,22 @@ def cmd_diff(args):
         summary_text.append(f"{len(missing_files):,}", style="bold yellow")
         summary_text.append(f" ({format_size(missing_size)})\n", style="yellow")
 
-        console.print(Panel(summary_text, title="[bold cyan]Directory Comparison[/bold cyan]", border_style="cyan"))
+        panel_title = "[bold cyan]Zip vs Directory Comparison[/bold cyan]" if is_zip_source else "[bold cyan]Directory Comparison[/bold cyan]"
+        console.print(Panel(summary_text, title=panel_title, border_style="cyan"))
 
         # Show missing files breakdown by folder if requested
         if args.show_missing and missing_files:
-            # Group by parent folder
-            by_folder: Dict[str, List[DirectoryFileInfo]] = defaultdict(list)
+            # Group by parent folder (handle both ZipFileInfo and DirectoryFileInfo)
+            by_folder: Dict[str, List] = defaultdict(list)
             for f in missing_files:
-                rel_path = f.file_path.relative_to(source_dir)
-                folder = str(rel_path.parent) if rel_path.parent != Path('.') else "(root)"
+                if is_zip_source:
+                    # ZipFileInfo has file_path as string
+                    file_path = Path(f.file_path)
+                    folder = str(file_path.parent) if file_path.parent != Path('.') else "(root)"
+                else:
+                    # DirectoryFileInfo has file_path as Path
+                    rel_path = f.file_path.relative_to(source_dir)
+                    folder = str(rel_path.parent) if rel_path.parent != Path('.') else "(root)"
                 by_folder[folder].append(f)
 
             folder_table = Table(title="Missing Files by Folder", show_header=True, header_style="bold yellow")
