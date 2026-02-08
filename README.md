@@ -308,6 +308,57 @@ Hashing files ━━━━━━━━━━━━━━━━━━━━ 100% 
 
 ---
 
+### 5. Diff
+
+Compare two directories to find files in source that are missing from destination.
+
+```bash
+python src/main.py diff <source_dir> <dest_dir> [options]
+```
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--hash-strategy` | Hash method: `size_partial`, `size_crc`, `full` |
+| `--show-missing` | Show breakdown of missing files by folder |
+| `--save-manifest FILE` | Save list of missing files to JSON |
+
+**Example:**
+```bash
+# Compare two photo libraries
+python src/main.py diff "D:\OldPhotos" "D:\NewPhotos" --show-missing
+
+# Save missing files list for later
+python src/main.py diff "D:\Backup" "D:\Current" --save-manifest missing.json
+```
+
+#### Diff Output
+
+```
+╭─────────────────── Directory Comparison ───────────────────╮
+│                                                            │
+│ Comparison Complete                                        │
+│                                                            │
+│ Source files:         45,230 (125.6 GB)                    │
+│ In destination:       42,100 (93.1%)                       │
+│ Missing:              3,130 (8.4 GB)                       │
+│                                                            │
+╰────────────────────────────────────────────────────────────╯
+
+           Missing Files by Folder
+┏━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━┓
+┃ Folder                  ┃ Files  ┃ Size      ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━┩
+│ 2023/vacation           │ 1,240  │ 4.2 GB    │
+│ 2022/christmas          │ 890    │ 2.1 GB    │
+│ 2021/misc               │ 1,000  │ 2.1 GB    │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━━━━━━┷━━━━━━━━━━━┛
+
+Progress: [██████████████████████████████████████░░] 93.1%
+```
+
+---
+
 ## Output Structure
 
 Extracted files are organized by year and month:

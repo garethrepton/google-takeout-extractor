@@ -23,7 +23,7 @@ from cache import TakeoutCache
 from extractor import extract_all_unique, format_size
 from cleanup import CleanupManager, CleanupMode
 from comparator import ZipDirectoryComparator
-from directory_scanner import DirectoryScanner
+from directory_scanner import DirectoryScanner, DirectoryFileInfo
 
 # Create console with legacy Windows support if needed
 console = Console(legacy_windows=(sys.platform == "win32"))
@@ -1278,6 +1278,153 @@ def cmd_compare(args):
             cache.close()
 
 
+def cmd_diff(args):
+    """Execute the diff command (compare two directories)."""
+    source_dir = Path(args.source_dir)
+    dest_dir = Path(args.dest_dir)
+
+    if not source_dir.exists():
+        console.print(f"[red]Error: Source directory not found: {source_dir}[/red]")
+        sys.exit(1)
+
+    if not dest_dir.exists():
+        console.print(f"[red]Error: Destination directory not found: {dest_dir}[/red]")
+        sys.exit(1)
+
+    display_banner()
+
+    cache = TakeoutCache()
+    try:
+        # Step 1: Scan source directory
+        console.print("[bold]Step 1:[/bold] Scanning source directory")
+        source_scanner = DirectoryScanner(hash_strategy=args.hash_strategy)
+        source_files = source_scanner.scan_directory(source_dir)
+        console.print(f"[cyan]Found {len(source_files):,} files in source[/cyan]")
+        console.print()
+
+        # Build source index by content key
+        source_by_key: Dict[str, List[DirectoryFileInfo]] = defaultdict(list)
+        source_total_size = 0
+        for f in source_files:
+            source_by_key[f.get_content_key()].append(f)
+            source_total_size += f.file_size
+
+        # Step 2: Scan destination directory
+        console.print("[bold]Step 2:[/bold] Scanning destination directory")
+        dest_scanner = DirectoryScanner(hash_strategy=args.hash_strategy)
+        dest_files = dest_scanner.scan_directory(dest_dir)
+        console.print(f"[cyan]Found {len(dest_files):,} files in destination[/cyan]")
+        console.print()
+
+        # Build destination index
+        dest_keys = set()
+        for f in dest_files:
+            dest_keys.add(f.get_content_key())
+
+        # Step 3: Compare
+        console.print("[bold]Step 3:[/bold] Comparing directories")
+
+        # Find files in source but not in destination
+        missing_files = []
+        present_files = []
+
+        for content_key, files in source_by_key.items():
+            if content_key in dest_keys:
+                present_files.extend(files)
+            else:
+                missing_files.extend(files)
+
+        missing_size = sum(f.file_size for f in missing_files)
+        present_size = sum(f.file_size for f in present_files)
+
+        console.print()
+
+        # Summary panel
+        summary_text = Text()
+        summary_text.append("Comparison Complete\n\n", style="bold white")
+
+        summary_text.append("Source files:         ", style="dim")
+        summary_text.append(f"{len(source_files):,}", style="white")
+        summary_text.append(f" ({format_size(source_total_size)})\n", style="dim")
+
+        summary_text.append("In destination:       ", style="dim")
+        summary_text.append(f"{len(present_files):,}", style="bold green")
+        pct_present = (len(present_files) / len(source_files) * 100) if source_files else 0
+        summary_text.append(f" ({pct_present:.1f}%)\n", style="green")
+
+        summary_text.append("Missing:              ", style="dim")
+        summary_text.append(f"{len(missing_files):,}", style="bold yellow")
+        summary_text.append(f" ({format_size(missing_size)})\n", style="yellow")
+
+        console.print(Panel(summary_text, title="[bold cyan]Directory Comparison[/bold cyan]", border_style="cyan"))
+
+        # Show missing files breakdown by folder if requested
+        if args.show_missing and missing_files:
+            # Group by parent folder
+            by_folder: Dict[str, List[DirectoryFileInfo]] = defaultdict(list)
+            for f in missing_files:
+                rel_path = f.file_path.relative_to(source_dir)
+                folder = str(rel_path.parent) if rel_path.parent != Path('.') else "(root)"
+                by_folder[folder].append(f)
+
+            folder_table = Table(title="Missing Files by Folder", show_header=True, header_style="bold yellow")
+            folder_table.add_column("Folder", style="dim")
+            folder_table.add_column("Files", justify="right")
+            folder_table.add_column("Size", justify="right")
+
+            for folder in sorted(by_folder.keys())[:20]:  # Limit to top 20 folders
+                files = by_folder[folder]
+                folder_size = sum(f.file_size for f in files)
+                folder_table.add_row(folder, f"{len(files):,}", format_size(folder_size))
+
+            if len(by_folder) > 20:
+                folder_table.add_row(f"... and {len(by_folder) - 20} more folders", "", "")
+
+            console.print(folder_table)
+            console.print()
+
+        # Progress bar
+        if source_files:
+            bar_width = 40
+            present_width = int(pct_present / 100 * bar_width)
+            missing_width = bar_width - present_width
+
+            bar = "[green]" + "█" * present_width + "[/green]"
+            bar += "[yellow]" + "█" * missing_width + "[/yellow]"
+
+            console.print(f"Progress: [{bar}] {pct_present:.1f}%")
+            console.print()
+
+        # Optionally save manifest of missing files
+        if args.save_manifest:
+            manifest = {
+                "generated": datetime.now().isoformat(),
+                "source_dir": str(source_dir.absolute()),
+                "dest_dir": str(dest_dir.absolute()),
+                "total_source_files": len(source_files),
+                "missing_count": len(missing_files),
+                "files": [
+                    {
+                        "path": str(f.file_path.relative_to(source_dir)),
+                        "file_size": f.file_size,
+                        "content_key": f.get_content_key()
+                    }
+                    for f in missing_files
+                ]
+            }
+
+            manifest_path = Path(args.save_manifest)
+            with open(manifest_path, 'w', encoding='utf-8') as mf:
+                json.dump(manifest, mf, indent=2)
+
+            console.print(f"[cyan]Manifest saved to: {manifest_path}[/cyan]")
+
+        console.print("[bold green]Comparison complete![/bold green]")
+
+    finally:
+        cache.close()
+
+
 def main():
     """Main function to handle command routing."""
     parser = argparse.ArgumentParser(
@@ -1401,6 +1548,36 @@ def main():
         help="Hash strategy: size_partial (fast), size_crc (matches zip), full (slowest)"
     )
 
+    # === DIFF subcommand ===
+    diff_parser = subparsers.add_parser(
+        "diff",
+        help="Compare two directories and find missing files"
+    )
+    diff_parser.add_argument(
+        "source_dir",
+        help="Source directory (what you want to check)"
+    )
+    diff_parser.add_argument(
+        "dest_dir",
+        help="Destination directory (where files should be)"
+    )
+    diff_parser.add_argument(
+        "--hash-strategy",
+        choices=["size_partial", "size_crc", "full"],
+        default="size_partial",
+        help="Hash strategy: size_partial (fast), size_crc (matches zip), full (slowest)"
+    )
+    diff_parser.add_argument(
+        "--show-missing",
+        action="store_true",
+        help="Show breakdown of missing files by folder"
+    )
+    diff_parser.add_argument(
+        "--save-manifest",
+        metavar="FILE",
+        help="Save manifest of missing files to JSON"
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -1424,6 +1601,8 @@ def main():
         cmd_reconcile(args)
     elif args.command == "compare":
         cmd_compare(args)
+    elif args.command == "diff":
+        cmd_diff(args)
 
 
 if __name__ == "__main__":
