@@ -1489,6 +1489,111 @@ def cmd_diff(args):
         cache.close()
 
 
+def cmd_latest(args):
+    """Execute the latest command (find most recent takeout date from zip filenames)."""
+    import re
+
+    directory = Path(args.directory)
+
+    if not directory.exists():
+        console.print(f"[red]Error: Directory not found: {directory}[/red]")
+        sys.exit(1)
+
+    display_banner()
+
+    # Find all zip files (including subdirectories)
+    zip_files = list(directory.rglob("*.zip"))
+
+    if not zip_files:
+        console.print("[yellow]No zip files found in directory[/yellow]")
+        sys.exit(0)
+
+    console.print(f"[cyan]Found {len(zip_files)} zip files[/cyan]")
+    console.print()
+
+    # Parse dates from Google Takeout zip filenames
+    # Format: takeout-20240115T120000Z-001.zip
+    takeout_pattern = re.compile(r'takeout-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z')
+
+    takeout_dates = []
+    for zip_path in zip_files:
+        match = takeout_pattern.search(zip_path.name)
+        if match:
+            year, month, day, hour, minute, second = match.groups()
+            try:
+                takeout_date = datetime(
+                    int(year), int(month), int(day),
+                    int(hour), int(minute), int(second)
+                )
+                takeout_dates.append((takeout_date, zip_path))
+            except ValueError:
+                pass
+
+    if not takeout_dates:
+        console.print("[yellow]No Google Takeout zip files found[/yellow]")
+        console.print("[dim]Expected format: takeout-YYYYMMDDTHHMMSSZ-NNN.zip[/dim]")
+        sys.exit(0)
+
+    # Sort by date
+    takeout_dates.sort(key=lambda x: x[0])
+
+    oldest_date, oldest_file = takeout_dates[0]
+    newest_date, newest_file = takeout_dates[-1]
+
+    # Group by unique dates (ignoring time, since multiple zips can be from same takeout)
+    unique_dates = set(d.date() for d, _ in takeout_dates)
+
+    # Build summary
+    summary_text = Text()
+    summary_text.append("Google Takeout Analysis\n\n", style="bold white")
+
+    summary_text.append("Takeout zips found:   ", style="dim")
+    summary_text.append(f"{len(takeout_dates)}\n", style="white")
+
+    summary_text.append("Unique takeout dates: ", style="dim")
+    summary_text.append(f"{len(unique_dates)}\n", style="white")
+
+    summary_text.append("\n", style="")
+
+    summary_text.append("Oldest takeout:       ", style="dim")
+    summary_text.append(f"{oldest_date.strftime('%Y-%m-%d %H:%M')}\n", style="cyan")
+    summary_text.append("                      ", style="dim")
+    summary_text.append(f"{oldest_file.name}\n", style="dim cyan")
+
+    summary_text.append("\n", style="")
+
+    summary_text.append("Latest takeout:       ", style="dim")
+    summary_text.append(f"{newest_date.strftime('%Y-%m-%d %H:%M')}\n", style="bold green")
+    summary_text.append("                      ", style="dim")
+    summary_text.append(f"{newest_file.name}\n", style="dim green")
+
+    console.print(Panel(summary_text, title="[bold cyan]Takeout Date Range[/bold cyan]", border_style="cyan"))
+
+    # Show all unique takeout dates if requested
+    if args.show_all:
+        date_table = Table(title="All Takeout Dates", show_header=True, header_style="bold cyan")
+        date_table.add_column("Date", style="cyan")
+        date_table.add_column("Files", justify="right")
+
+        dates_by_date = defaultdict(list)
+        for d, f in takeout_dates:
+            dates_by_date[d.date()].append(f)
+
+        for date in sorted(dates_by_date.keys()):
+            files = dates_by_date[date]
+            date_table.add_row(date.strftime("%Y-%m-%d"), str(len(files)))
+
+        console.print(date_table)
+        console.print()
+
+    # Recommendation
+    console.print()
+    next_date = newest_date.strftime("%Y-%m-%d")
+    console.print(f"[bold]Next Google Takeout should start from:[/bold] [green]{next_date}[/green]")
+    console.print()
+    console.print("[dim]Tip: When requesting a new Takeout, set the date range to start from this date[/dim]")
+
+
 def main():
     """Main function to handle command routing."""
     parser = argparse.ArgumentParser(
@@ -1642,6 +1747,21 @@ def main():
         help="Save manifest of missing files to JSON"
     )
 
+    # === LATEST subcommand ===
+    latest_parser = subparsers.add_parser(
+        "latest",
+        help="Find the most recent takeout date from zip filenames"
+    )
+    latest_parser.add_argument(
+        "directory",
+        help="Directory containing Google Takeout zip files"
+    )
+    latest_parser.add_argument(
+        "--show-all",
+        action="store_true",
+        help="Show all takeout dates found"
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -1667,6 +1787,8 @@ def main():
         cmd_compare(args)
     elif args.command == "diff":
         cmd_diff(args)
+    elif args.command == "latest":
+        cmd_latest(args)
 
 
 if __name__ == "__main__":

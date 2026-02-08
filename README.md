@@ -362,6 +362,48 @@ Progress: [███████████████████████
 
 ---
 
+### 6. Latest
+
+Find the most recent Google Takeout date from zip filenames to know when to request your next export.
+
+```bash
+python src/main.py latest <directory> [options]
+```
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--show-all` | Show all takeout dates found |
+
+**Example:**
+```bash
+python src/main.py latest "D:\Takeout"
+python src/main.py latest "D:\Takeout" --show-all
+```
+
+#### Latest Output
+
+```
+╭──────────────── Takeout Date Range ────────────────╮
+│                                                    │
+│ Google Takeout Analysis                            │
+│                                                    │
+│ Takeout zips found:   15                           │
+│ Unique takeout dates: 3                            │
+│                                                    │
+│ Oldest takeout:       2023-06-15 14:30             │
+│                       takeout-20230615T143000Z-001.zip │
+│                                                    │
+│ Latest takeout:       2024-01-15 09:22             │
+│                       takeout-20240115T092200Z-001.zip │
+│                                                    │
+╰────────────────────────────────────────────────────╯
+
+Next Google Takeout should start from: 2024-01-15
+```
+
+---
+
 ## Output Structure
 
 Extracted files are organized by year and month:
