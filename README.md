@@ -7,7 +7,6 @@
 A powerful Python CLI for analyzing, deduplicating, and extracting Google Takeout archives with intelligent organization.
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 ## Features
 
@@ -408,12 +407,6 @@ google-takeout-extractor/
 ├── requirements.txt
 └── README.md
 ```
-
----
-
-## License
-
-MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
