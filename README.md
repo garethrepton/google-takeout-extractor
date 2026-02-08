@@ -1,3 +1,5 @@
+This has been VIBE CODED!
+
 # Google Takeout Tool
 
 A Python tool for analyzing, organizing, and deduplicating Google Takeout archives.
